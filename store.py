@@ -3,6 +3,8 @@ from langchain.embeddings import OpenAIEmbeddings
 from langchain.document_loaders import TextLoader
 #from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores import FAISS
+from langchain.document_loaders.web_base import WebBaseLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,8 +25,22 @@ class Store:
             self.init_database()
 
     def init_database(self):
+        loader = WebBaseLoader(
+            web_paths=("https://lilianweng.github.io/posts/2023-06-23-agent/",),
+            bs_kwargs=dict(
+                parse_only=bs4.SoupStrainer(
+                    class_=("post-content", "post-title", "post-header")
+                )
+            ),
+        )
+        docs = loader.load()
+
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        splits = text_splitter.split_documents(docs)
+
         # load dataset
-        self.db = FAISS.from_documents([], self.embeddings_model)
+        self.db = FAISS.from_documents(splits, self.embeddings_model)
+        self.retriever = FAISS.as_retriever()
 
     def add_docs(self, docs):
         #text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
