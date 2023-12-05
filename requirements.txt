@@ -1,0 +1,11 @@
+accelerate
+peft
+bitsandbytes
+transformers
+trl
+datasets
+
+faiss-cpu
+langchain
+python-dotenv
+tiktoken
