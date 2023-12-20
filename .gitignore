@@ -3,4 +3,5 @@ venv
 .env
 data
 models
+deprecated
 __pycache__
