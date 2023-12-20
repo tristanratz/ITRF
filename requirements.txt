@@ -9,3 +9,4 @@ faiss-cpu
 langchain
 python-dotenv
 tiktoken
+sentence_transformers

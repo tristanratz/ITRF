@@ -26,24 +26,23 @@ class RAG:
 
         self.llm = self.model.get_llm()
 
-
-        def format_docs(docs):
-            return "\n\n".join(doc.page_content for doc in docs)
-
-
-        self.rag_chain = (
-            {"context": self.retriever | format_docs, "question": RunnablePassthrough()}
-            | self.prompt
-            | self.llm
+        self.llm_chain = (
+            self.llm
             | StrOutputParser() 
             | RunnablePassthrough()
         )
 
+    def _format_docs(self, docs):
+            return "\n\n".join(doc.page_content for doc in docs)
 
     def invoke(self, str):
-        self.retriever.invoke(str)
-
-        return self.rag_chain.invoke(str)
+        docs = self.retriever.invoke(str)
+        print(docs)
+        prompt = self.prompt.invoke(
+            {"context": self._format_docs(docs), "question": str}
+            )
+        
+        return self.llm_chain.invoke(prompt)
 
 if __name__ == "__main__":
     rag = RAG()
