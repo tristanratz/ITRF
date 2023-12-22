@@ -10,3 +10,4 @@ langchain
 python-dotenv
 tiktoken
 sentence_transformers
+einops

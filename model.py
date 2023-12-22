@@ -15,8 +15,11 @@ class Model:
             self.llm = ChatOpenAI()
             return
         elif model == "llama":
-            tokenizer = LlamaTokenizer.from_pretrained(path, device_map='auto')
             model_loaded = LlamaForCausalLM.from_pretrained(path, device_map='auto')
+            tokenizer = LlamaTokenizer.from_pretrained(path, device_map='auto')
+        elif model == "phi":
+            model_loaded = AutoModelForCausalLM.from_pretrained(path, torch_dtype="auto", device_map="auto", trust_remote_code=True)
+            tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
         else:
             model_loaded = AutoModelForCausalLM.from_pretrained(path)
             tokenizer = AutoTokenizer.from_pretrained(path)
