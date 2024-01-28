@@ -87,7 +87,7 @@ def main(process=0):
     doc_nr = 0
 
     print("Loading documents...")
-    while chunks_count < (110_000_000 / 4):            
+    while chunks_count < (130_000_000 / 4):            
         sample = next(shuffled_dataset)
         
         # Split document into chunks  
