@@ -23,9 +23,9 @@ if args.tofile:
     sys.stdout = f
 
 # Load wikipedia corpus (in steps of 1000 documents)
-documents_count = 0
-total_count = 0
-chunks_count = 0
+documents_count = 0 # Total nr of documents loaded
+total_count = 0 # Total nr of documents processed (over all processes)
+chunks_count = 0 # Total nr of chunks loaded
 start = time.time()
 
 def len_func(example):
@@ -66,7 +66,7 @@ def index_doc(docs, nr_documents):
     db.add_documents(docs)
     elapsed = (time.time() - start)
     clock = str(timedelta(seconds=elapsed))
-    print(f"Loaded documents {nr_documents} (total: {documents_count} [frac: {round(documents_count%total_count, 2)}%]), with {len(docs)} chunks (total: {chunks_count}), {clock} elapsed (embedding: {time.time()-process_start}s)")
+    print(f"Loaded documents {nr_documents} (total: {documents_count} [frac: {round(documents_count/total_count, 2)}%]), with {len(docs)} chunks (total: {chunks_count}), {clock} elapsed (embedding: {time.time()-process_start}s)")
 
 def main(process=0):
     global documents_count
@@ -78,13 +78,12 @@ def main(process=0):
     global embedding
     global client
 
-
     dataset = load_dataset('oscar', "unshuffled_deduplicated_en", split='train', streaming=True)
     shuffled_dataset = iter(dataset.shuffle(buffer_size=10_000, seed=2024))
 
     documents = [] # Buffer of split documents
-    chunk_nr = 0
-    doc_nr = 0
+    chunk_nr = 0 # Nr of chunks which are in the buffer
+    doc_nr = 0 # Nr of documents which are in the buffer
 
     print("Loading documents...")
     while chunks_count < (130_000_000 / 4):            
@@ -102,17 +101,16 @@ def main(process=0):
         total_count += 1
 
         if chunk_nr > 1_000:
+            chunks_count += chunk_nr
             index_doc(documents, doc_nr)
 
-            chunks_count += chunk_nr
             # results = await db.aadd_documents(new_docs)
             # print(results)
-            docs = []
+            documents = []
             chunk_nr = 0
             doc_nr = 0
                 
-    db.add_documents(documents)
-        
+    db.add_documents(documents) 
 
     print("---------------------------------------------")
     print()
