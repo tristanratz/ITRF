@@ -13,9 +13,16 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--process', type=int, default=0, help='The number of the process')
 parser.add_argument('--tofile', type=bool, default=False, help='Output the results to the console')
+
+# Add all the processed chunks from all the processes to the use the continiue point
+parser.add_argument('--cdoc', type=int, default=0, help='If the process was interrupted, continue from this document')
+parser.add_argument('--cchunk', type=int, default=0, help='If the process was interrupted, use this for counting the chunks')
 args = parser.parse_args()
 
 process = args.process
+
+cdoc = args.cdoc
+cchunk = args.cchunk
 
 if args.tofile:
     # Put the output in a file
@@ -24,8 +31,8 @@ if args.tofile:
 
 # Load wikipedia corpus (in steps of 1000 documents)
 documents_count = 0 # Total nr of documents loaded
-total_count = 0 # Total nr of documents processed (over all processes)
-chunks_count = 0 # Total nr of chunks loaded
+total_count = cdoc*4 # Total nr of documents processed (over all processes)
+chunks_count = cchunk # Total nr of chunks loaded
 start = time.time()
 
 def len_func(example):
@@ -74,6 +81,8 @@ def main(process=0):
     global chunks_count
     global start
     global db
+    global cdoc
+    global cchunk
     global text_splitter
     global embedding
     global client
@@ -84,6 +93,25 @@ def main(process=0):
     documents = [] # Buffer of split documents
     chunk_nr = 0 # Nr of chunks which are in the buffer
     doc_nr = 0 # Nr of documents which are in the buffer
+
+    # Continue from a certain point
+    if cdoc > 0:
+        print(f"Continuing from document {cdoc}...")
+        while documents_count < cdoc:
+            next(shuffled_dataset)
+           
+            # Add for the total count
+            if total_count % 4 == process:
+                documents_count += 1
+            
+                if documents_count % 300_000 == 0:
+                    elapsed = (time.time() - start)
+                    clock = str(timedelta(seconds=elapsed))
+                    print(f"Fast forwarding... {documents_count} documents reached (elapsed: {clock})")
+            
+            total_count += 1
+
+        print(f"---- Contiue document ({cdoc}) reached ----")
 
     print("Loading documents...")
     while chunks_count < (130_000_000 / 4):            
