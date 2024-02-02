@@ -70,7 +70,18 @@ def index_doc(docs, nr_documents):
     global client
 
     process_start = time.time()
-    db.add_documents(docs)
+
+    # Add documents to the database
+    success = False
+    while not success:
+        try:
+            success = db.add_documents(docs)
+        except Exception as e:
+            print("Error while adding documents to the database")
+            print(e)
+            print("Waiting for 120s for database to be ready...")
+            time.sleep(120)
+
     elapsed = (time.time() - start)
     clock = str(timedelta(seconds=elapsed))
     print(f"Loaded documents {nr_documents} (total: {documents_count} [frac: {round(documents_count/total_count, 2)}%]), with {len(docs)} chunks (total: {chunks_count}), {clock} elapsed (embedding: {time.time()-process_start}s)")
@@ -88,7 +99,7 @@ def main(process=0):
     global client
 
     dataset = load_dataset('oscar', "unshuffled_deduplicated_en", split='train', streaming=True)
-    shuffled_dataset = iter(dataset.shuffle(buffer_size=10_000, seed=2024))
+    shuffled_dataset = iter(dataset.shuffle(buffer_size=100_000, seed=2024))
 
     documents = [] # Buffer of split documents
     chunk_nr = 0 # Nr of chunks which are in the buffer
@@ -114,13 +125,13 @@ def main(process=0):
         print(f"---- Contiue document ({cdoc}) reached ----")
 
     print("Loading documents...")
-    while chunks_count < (130_000_000 / 4):            
+    while chunks_count < (150_000_000 / 4):            
         sample = next(shuffled_dataset)
         
         # Split document into chunks  
         # Use only 1/4 of the documents for each process
         if total_count % 4 == process:
-            docs = text_splitter.create_documents([sample["text"]], [{"id": sample["id"]}])
+            docs = text_splitter.create_documents([sample["text"]], [{"id": sample["id"], "src": "oscar"}])
             documents.extend(docs)
             chunk_nr += len(docs)
             doc_nr += 1

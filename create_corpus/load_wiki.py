@@ -12,12 +12,12 @@ import argparse
 # Parse arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--process', type=int, default=0, help='The number of the process')
-parser.add_argument('--console', type=bool, default=False, help='Output the results to the console')
+parser.add_argument('--tofile', type=bool, default=False, help='Output the results to the console')
 args = parser.parse_args()
 
 process = args.process
 
-if not args.console:
+if args.tofile:
     # Put the output in a file
     f = open(f"../data/process_output/wiki_dump-{process}.txt", "w")
     sys.stdout = f
@@ -99,7 +99,7 @@ def main(process=0):
             # Split document into chunks  
             if documents_count % 4 == process:
                 documents.append(json_line["text"])
-                metadatas.append({"title": json_line["title"], "section": json_line["section"]})  
+                metadatas.append({"title": json_line["title"], "src": "wiki", "section": json_line["section"]})  
             documents_count += 1
 
             if documents_count % 4_000 == 0:
