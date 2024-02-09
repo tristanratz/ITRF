@@ -71,7 +71,18 @@ def index_doc(documents, metadatas):
 
     process_start = time.time()
     docs = text_splitter.create_documents(documents, metadatas)
-    db.add_documents(docs)
+    
+    # Add documents to the database
+    success = False
+    while not success:
+        try:
+            success = db.add_documents(docs)
+        except Exception as e:
+            print("Error while adding documents to the database")
+            print(e)
+            print("Waiting for 120s for database to be ready...")
+            time.sleep(120)
+
     elapsed = (time.time() - start)
     clock = str(timedelta(seconds=elapsed))
     chunks_count += len(docs)
