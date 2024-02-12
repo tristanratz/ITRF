@@ -6,25 +6,57 @@ import time
 from datetime import timedelta
 import pandas as pd
 from pandas import DataFrame
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--n', type=int, default=7500, help='The number of samples per dataset')
+parser.add_argument('--collection', type=str, default="retriever", help='Collection name in the vector database')
+parser.add_argument('--k', type=int, default=3, help='The number of contexts per sample')
+parser.add_argument('--options', type=bool, default=True, help='If the multiple choice options should be part of query')
+parser.add_argument('--continue_point', type=str, default="", help='Conitnue from this dataset.')
+parser.add_argument('--sample_skip', type=int, default=0, help='Conitnue from this point in the dataset.')
+
+args = parser.parse_args()
 
 #######
 # Config variables
-n = 7500
-rarit_dataset_buffer = []
-k=3
-options_enabled = True
-total = 0
+n = args.n
+col_name = args.collection
+k=args.k
+options_enabled = args.options
+continue_point = args.continue_point
+data_path = '../data/dataset/rarit_dataset_llm'
 #######
 
-col_name = "retriever"
+rarit_dataset_buffer = []
 
 datasets_openqa = ["tau/commonsense_qa", "math_qa", "web_questions", "wiki_qa", "yahoo_answers_qa", "freebase_qa", "ms_marco"]
 datasets_reading = ["coqa", "drop", "narrativeqa", "newsqa", ("pubmed_qa", "pqa_unlabeled"), "quail", "quarel", "squad_v2"] # "natural_questions", "trivia_qa",  "search_qa", "", "duorc", "ropes"
 datasets_summ = ["cnn_dailymail"]
 datasets_cot = ["aqua_rat", "yangdong/ecqa", "gsm8k", "hendrycks/competition_math", "metaeval/strategy-qa"]
 
+task_list = []
+task_list.extend(datasets_openqa)
+task_list.extend(datasets_reading)
+task_list.extend(datasets_summ)
+task_list.extend(datasets_cot)
+
+tmp = []
+
+# Remove all the datasets before continue point
+cp = False
+for d in task_list:
+    if d == continue_point:
+        cp = True
+    if cp:
+        tmp.append(d)
+task_list = tmp
+
 rarit_dataset_buffer = []
 rarit = DataFrame(columns=["split", "query", "prediction", "context", "src", "id", "context_src", "context_id", "original_context", "task", "domain"])
+if continue_point != "":
+    rarit = pd.read_parquet(f"{data_path}.parquet")
+total = len(rarit)
 
 sentinel = object() # Used to check if the iterators are empty
 
@@ -127,9 +159,16 @@ def save_examples(i, start, last_time, examples, dname, force=False):
                 df = DataFrame(rarit_dataset_buffer)
                 rarit = pd.concat([rarit, df])
             rarit_dataset_buffer.clear()
-        rarit.to_parquet("../data/dataset/rarit_dataset_llm.parquet")
-        rarit.to_csv("../data/dataset/rarit_dataset_llm.csv")
+        rarit.to_parquet(f"{data_path}.parquet")
+        # rarit.to_csv(f"{data_path}.csv", escapechar='\\')
 
+def skip(dataset, dname):
+    if dname == continue_point:
+        for _ in range(args.sample_skip+1):
+            next(dataset)
+        print("Continue from", args.sample_skip+1, "to", n)
+        return range(args.sample_skip+1, n)
+    return range(n)
 
 ##################
 # OpenQA
@@ -140,137 +179,147 @@ def save_examples(i, start, last_time, examples, dname, force=False):
 #####
 
 dname = datasets_openqa[0]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    options = ""
-    if options_enabled:
-        options = "\n Options: "
-    answer = -1
-    for idx, o in enumerate(example["choices"]["label"]):
+        options = ""
         if options_enabled:
-            options += f"{o}: {example['choices']['text'][idx]}, "
-        if example["answerKey"] == o:
-            answer = idx
-    if options_enabled: 
-        options += "\n"
+            options = "\n Options: "
+        answer = -1
+        for idx, o in enumerate(example["choices"]["label"]):
+            if options_enabled:
+                options += f"{o}: {example['choices']['text'][idx]}, "
+            if example["answerKey"] == o:
+                answer = idx
+        if options_enabled: 
+            options += "\n"
 
-    query = example["question"] + options
-    if options_enabled:
-        prediction = f"{example['answerKey']}) {example['choices']['text'][answer]}"
-    else:
-        prediction =  f"{example['choices']['text'][answer]}"
-    example_id = example["id"] + "_" + example["question_concept"]
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="mc", domain="openqa")
-    
-    save_examples(i, start, last_time, examples, dname)
+        query = example["question"] + options
+        if options_enabled:
+            prediction = f"{example['answerKey']}) {example['choices']['text'][answer]}"
+        else:
+            prediction =  f"{example['choices']['text'][answer]}"
+        example_id = example["id"] + "_" + example["question_concept"]
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="mc", domain="openqa")
+        
+        save_examples(i, start, last_time, examples, dname)
 
 #####
 # MathQA
 #####
 dname = datasets_openqa[1]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
-    options = ""
-    if options_enabled:
-        options =  "\nOptions: " + example["options"]
-    query = example["Problem"] + options
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
+        options = ""
+        if options_enabled:
+            options =  "\nOptions: " + example["options"]
+        query = example["Problem"] + options
 
-    answer = ""
-    if options_enabled:
-        answer = example["correct"] + ") "
+        answer = ""
+        if options_enabled:
+            answer = example["correct"] + ") "
 
-    # Extract actual answer from options
-    for idx, o in enumerate(example["options"].split(",")):
-        a = o.split(" ) ")
-        if example["correct"] == a[0].strip():
-            answer += a[1]
+        # Extract actual answer from options
+        for idx, o in enumerate(example["options"].split(",")):
+            a = o.split(" ) ")
+            if example["correct"] == a[0].strip():
+                answer += a[1]
 
-    prediction = answer
-    example_id = example["category"] + "_" + str(i)
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="mc", domain="openqa")
-    
-    save_examples(i, start, last_time, examples, dname)
+        prediction = answer
+        example_id = example["category"] + "_" + str(i)
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="mc", domain="openqa")
+        
+        save_examples(i, start, last_time, examples, dname)
 
 #####
 # web_questions
 #####
 
 dname = datasets_openqa[2]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["question"]
-    prediction =  example["answers"][0]
-    example_id = example["url"] + "_" + example["answers"][0]
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="qa", domain="openqa")
-    
-    save_examples(i, start, last_time, examples, dname)
+        query = example["question"]
+        prediction =  example["answers"][0]
+        example_id = example["url"] + "_" + example["answers"][0]
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="qa", domain="openqa")
+        
+        save_examples(i, start, last_time, examples, dname)
 
 #####
 # WikiQA
 #####
 
 dname = datasets_openqa[3]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["question"]
-    prediction =  example["answer"]
-    example_id = example["question_id"] + "_" + example["document_title"]
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="qa", domain="openqa")
-        
-    save_examples(i, start, last_time, examples, dname)
+        query = example["question"]
+        prediction =  example["answer"]
+        example_id = example["question_id"] + "_" + example["document_title"]
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="qa", domain="openqa")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 #####
 # yahoo_answers_qa
 #####
 
 dname = datasets_openqa[4]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["question"]
-    prediction =  example["answer"]
-    example_id = example["id"] + "_" + example["main_category"]
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="qa", domain="openqa")
-        
-    save_examples(i, start, last_time, examples, dname)
+        query = example["question"]
+        prediction =  example["answer"]
+        example_id = example["id"] + "_" + example["main_category"]
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="qa", domain="openqa")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 ##################
 # Reading Comprehension
@@ -281,150 +330,162 @@ for i in range(n):
 #####
 
 dname = datasets_reading[0]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["questions"][0]
-    prediction =  example["answers"]['input_text'][0]
-    example_id = example["source"] + "_" + str(i)
-    context = example["story"]
-    examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
-        
-    save_examples(i, start, last_time, examples, dname)
+        query = example["questions"][0]
+        prediction =  example["answers"]['input_text'][0]
+        example_id = example["source"] + "_" + str(i)
+        context = example["story"]
+        examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 #####
 # drop
 #####
 
 dname = datasets_reading[1]
-dataset = load_dataset(dname, split="train").to_pandas()
-dataset.drop_duplicates(subset=["section_id"], keep="first", inplace=True)
-dataset = Dataset.from_pandas(dataset)
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train").to_pandas()
+    dataset.drop_duplicates(subset=["section_id"], keep="first", inplace=True)
+    dataset = Dataset.from_pandas(dataset)
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["question"]
-    spans = example["answers_spans"]['spans']
-    if len(spans) > 1:
-        prediction =  ", ".join(spans)
-    else:
-        prediction = spans[0]
-    
-    example_id = example["query_id"]
-    context = example["passage"]
-    examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
+        query = example["question"]
+        spans = example["answers_spans"]['spans']
+        if len(spans) > 1:
+            prediction =  ", ".join(spans)
+        else:
+            prediction = spans[0]
         
-    save_examples(i, start, last_time, examples, dname)
+        example_id = example["query_id"]
+        context = example["passage"]
+        examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 #####
 # narrativeqa
 #####
 
 dname = datasets_reading[2]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["question"]["text"]
-    prediction =  example["answers"][0]['text']
-    example_id = example["document"]["id"] + "_" + str(i)
-    context = example["document"]["summary"]["text"]
-    examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
-        
-    save_examples(i, start, last_time, examples, dname)
+        query = example["question"]["text"]
+        prediction =  example["answers"][0]['text']
+        example_id = example["document"]["id"] + "_" + str(i)
+        context = example["document"]["summary"]["text"]
+        examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 #####
 # pubmedqa
 #####
 
 dname = datasets_reading[4][0]
-dataset = load_dataset(dname,  datasets_reading[4][1], split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname,  datasets_reading[4][1], split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["question"]
-    prediction =  example["long_answer"]
-    example_id = example["pubid"]
-    context = " ".join(example["context"]["contexts"])
-    examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
-        
-    save_examples(i, start, last_time, examples, dname)
+        query = example["question"]
+        prediction =  example["long_answer"]
+        example_id = example["pubid"]
+        context = " ".join(example["context"]["contexts"])
+        examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 #####
 # quail
 #####
 
 dname = datasets_reading[5]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["question"]
-    prediction =  example["answers"][example["correct_answer_id"]]
-    if example["question_type"] == "Unanswerable":
-        prediction = "I don't know."
-    example_id = example["id"]
-    context = " ".join(example["context"])
-    examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
-        
-    save_examples(i, start, last_time, examples, dname)
+        query = example["question"]
+        prediction =  example["answers"][example["correct_answer_id"]]
+        if example["question_type"] == "Unanswerable":
+            prediction = "I don't know."
+        example_id = example["id"]
+        context = " ".join(example["context"])
+        examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 #####
 # quarel
 #####
 
 dname = datasets_reading[6]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["question"].split("(A)")[0]
-    if options_enabled:
-        query += "\n Options: (A)" + example["question"].split("(A)")[1]
+        query = example["question"].split("(A)")[0]
+        if options_enabled:
+            query += "\n Options: (A)" + example["question"].split("(A)")[1]
 
-    answers = example["question"].split("(A)")[1].split("(B)")
-    prediction =  answers[example["answer_index"]].strip()
-    example_id = example["id"]
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="mc", domain="rc")
-        
-    save_examples(i, start, last_time, examples, dname)
+        answers = example["question"].split("(A)")[1].split("(B)")
+        prediction =  answers[example["answer_index"]].strip()
+        example_id = example["id"]
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="mc", domain="rc")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 
 #####
@@ -432,28 +493,29 @@ for i in range(n):
 #####
 
 dname = datasets_reading[7]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n*2):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    for i in range(n*2):
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["question"]
-    answer = example["answers"]["text"]
-    prediction = ""
-    if len(answer) == 0:
-        prediction = "I don't know."
-    else:
-        prediction = answer[0]
-    example_id = example["id"]
-    context = " ".join(example["context"])
-    examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
-        
-    save_examples(i, start, last_time, examples, dname)
+        query = example["question"]
+        answer = example["answers"]["text"]
+        prediction = ""
+        if len(answer) == 0:
+            prediction = "I don't know."
+        else:
+            prediction = answer[0]
+        example_id = example["id"]
+        context = " ".join(example["context"])
+        examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="rc")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 ##################
 # Summarization
@@ -464,22 +526,24 @@ for i in range(n*2):
 #####
 
 dname = "cnn_dailymail"
-dataset = load_dataset(dname, "1.0.0", split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, "1.0.0", split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = "Summarize this article"
-    prediction =  example["highlights"]
-    example_id = example["id"]
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, context=example["article"], retrieval=False, task="sum", domain="sum")
-        
-    save_examples(i, start, last_time, examples, dname)
+        query = "Summarize this article"
+        prediction =  example["highlights"]
+        example_id = example["id"]
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, context=example["article"], retrieval=False, task="sum", domain="sum")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 ##################
 # Chain of thought reasoning
@@ -490,114 +554,122 @@ for i in range(n):
 #####
 
 dname = datasets_cot[0]
-dataset = load_dataset(dname, "raw", split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, "raw", split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["question"] + "\n" + example["rationale"]
+        query = example["question"] + "\n" + example["rationale"]
 
-    options = "\nOptions: "
-    correct = -1
-    for idx, o in enumerate(example["options"]):
-        options += f"\n{o}"
-        if o[0] == example["correct"]:
-            correct = idx
+        options = "\nOptions: "
+        correct = -1
+        for idx, o in enumerate(example["options"]):
+            options += f"\n{o}"
+            if o[0] == example["correct"]:
+                correct = idx
 
-    if options_enabled:
-        query += options
-        prediction = example["options"][correct]   
-    else:
-        prediction = example["options"][correct].split(")")[1]
+        if options_enabled:
+            query += options
+            prediction = example["options"][correct]   
+        else:
+            prediction = example["options"][correct].split(")")[1]
 
-    example_id = dname + "_" + str(i)
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="mc", domain="cotr")
-        
-    save_examples(i, start, last_time, examples, dname)
+        example_id = dname + "_" + str(i)
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="mc", domain="cotr")
+            
+        save_examples(i, start, last_time, examples, dname)
 #####
 # yangdong/ecqa
 #####
 
 dname = datasets_cot[1]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["q_text"]
-    query += "\n" + example["taskA_pos"]
+        query = example["q_text"]
+        query += "\n" + example["taskA_pos"]
 
-    options = "\nOptions: "
-    correct = -1
-    for idx in range(5):
-        options += f"{idx+1}) {example[f'q_op{idx+1}']}"
-        if example["q_ans"] == example[f'q_op{idx+1}']:
-            correct = idx + 1
-    if options_enabled:
-        query += options
-        prediction = f"{correct}) {example[f'q_op{correct}']}"
-    else:
-        prediction = example[f'q_op{correct}']
-    
-    example_id = example["q_no"]
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="mc", domain="cotr")
+        options = "\nOptions: "
+        correct = -1
+        for idx in range(5):
+            options += f"{idx+1}) {example[f'q_op{idx+1}']}"
+            if example["q_ans"] == example[f'q_op{idx+1}']:
+                correct = idx + 1
+        if options_enabled:
+            query += options
+            prediction = f"{correct}) {example[f'q_op{correct}']}"
+        else:
+            prediction = example[f'q_op{correct}']
         
-    save_examples(i, start, last_time, examples, dname)
+        example_id = example["q_no"]
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="mc", domain="cotr")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 #####
 # gsm8k
 #####
 
 dname = datasets_cot[2]
-dataset = load_dataset(dname, "main", split="train", streaming=True)
-shuffled = iter(dataset.shuffle(buffer_size=10_000, seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, "main", split="train", streaming=True)
+    shuffled = iter(dataset.shuffle(buffer_size=10_000, seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    rational = example["answer"].split("####")
-    query = example["question"] + "\n" + rational[0]
-    prediction =  rational[1]
-    example_id = dname + "_" + str(i)
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="qa", domain="cotr")
-        
-    save_examples(i, start, last_time, examples, dname)
+        rational = example["answer"].split("####")
+        query = example["question"] + "\n" + rational[0]
+        prediction =  rational[1]
+        example_id = dname + "_" + str(i)
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="qa", domain="cotr")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 #####
 # MATH -> hendrycks/competition_math
 #####
     
 dname = datasets_cot[3]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["problem"]
-    prediction =  example["solution"]
-    example_id = dname + "_" + str(i)
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="qa", domain="cotr")
-        
-    save_examples(i, start, last_time, examples, dname)
+        query = example["problem"]
+        prediction =  example["solution"]
+        example_id = dname + "_" + str(i)
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="qa", domain="cotr")
+            
+        save_examples(i, start, last_time, examples, dname)
 
 
 #####
@@ -605,28 +677,30 @@ for i in range(n):
 #####
     
 dname = datasets_cot[4]
-dataset = load_dataset(dname, split="train")
-shuffled = iter(dataset.shuffle(seed=2024))
-start = time.time()
-last_time = start
-for i in range(n):
-    example = next(shuffled, sentinel)
-    if example is sentinel:
-        print(f"Dataset {dname} run out of examples after {i} examples")
-        break
+if dname in task_list:
+    dataset = load_dataset(dname, split="train")
+    shuffled = iter(dataset.shuffle(seed=2024))
+    start = time.time()
+    last_time = start
+    sample_range = skip(shuffled, dname)
+    for i in sample_range:
+        example = next(shuffled, sentinel)
+        if example is sentinel:
+            print(f"Dataset {dname} run out of examples after {i} examples")
+            break
 
-    query = example["question"]
-    rational = ""
-    for idx, de in enumerate(example["decomposition"]):
-        if len(example["facts"]) > idx:
-            rational += f"{de} {example['facts']} "
-        else:
-            rational += f"{de}"
-    query += "\n" + rational
-    prediction =  "True" if example["answer"] else "False"
-    example_id = example["qid"]
-    examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="tf", domain="cotr")
-        
-    save_examples(i, start, last_time, examples, dname)
+        query = example["question"]
+        rational = ""
+        for idx, de in enumerate(example["decomposition"]):
+            if len(example["facts"]) > idx:
+                rational += f"{de} {example['facts']} "
+            else:
+                rational += f"{de}"
+        query += "\n" + rational
+        prediction =  "True" if example["answer"] else "False"
+        example_id = example["qid"]
+        examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="tf", domain="cotr")
+            
+        save_examples(i, start, last_time, examples, dname)
 # Force save after the last example
 save_examples(0, start, last_time, [], dname, force=True)

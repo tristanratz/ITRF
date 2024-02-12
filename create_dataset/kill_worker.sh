@@ -1,0 +1,1 @@
+kill -9 $(cat ../data/process_output/save_pid_dataset.txt)
