@@ -1,6 +1,6 @@
 from datasets import load_dataset
 import torch
-from transformers import AutoTokenizer, LlamaForCausalLM, TrainingArguments
+from transformers import AutoTokenizer, LlamaForCausalLM, TrainingArguments, BitsAndBytesConfig
 from peft import get_peft_model, LoftQConfig, LoraConfig, PeftModel, PeftConfig, prepare_model_for_kbit_training
 from trl import SFTTrainer
 from dotenv import load_dotenv
@@ -19,6 +19,8 @@ accelerator = Accelerator()
 
 device = accelerator.device
 zero_stage = 3
+quantized = True
+size = 13 # 7, 13, 70
 
 accelerator.print(f"Using device: {device}")
 
@@ -41,21 +43,18 @@ def _formatting_func(example):
 
 def main():
     max_seq_length = 2048 # Supports automatic RoPE Scaling, so choose any number
-
     packing = True # Packing multiple examples into one sequence
-
-    base_model = "meta-llama/Llama-2-7b-chat-hf"
-
-    output_dir = "../models/itrf/7b-lora"
+    base_model = f"meta-llama/Llama-2-{size}b-chat-hf"
+    output_dir = f"../models/itrf/{size}b-{'q' if quantized else ''}lora"
 
     # Set the training arguments
     args = TrainingArguments(
         output_dir = output_dir,
         # auto_find_batch_size=True,
-        per_device_train_batch_size=2, # Batch size = per_device_train_batch_size * gradient_accumulation_steps * num_gpus (if using DataParallel)
-        per_device_eval_batch_size=2, # Batch size = per_device_train_batch_size * gradient_accumulation_steps * num_gpus (if using DataParallel)
-        gradient_accumulation_steps=8, # Helps to fit larger batch sizes into memory, slightly increases training time
-        eval_accumulation_steps=8,
+        per_device_train_batch_size=4, # Batch size = per_device_train_batch_size * gradient_accumulation_steps * num_gpus (if using DataParallel)
+        per_device_eval_batch_size=4, # Batch size = per_device_train_batch_size * gradient_accumulation_steps * num_gpus (if using DataParallel)
+        gradient_accumulation_steps=4, # Helps to fit larger batch sizes into memory, slightly increases training time
+        eval_accumulation_steps=4,
         gradient_checkpointing=True,
         warmup_steps=100,
         # num_train_epochs=500,
@@ -77,13 +76,26 @@ def main():
     # Load the model
     if zero_stage > 2:
         # Getting error with Zero stage 3 with deepspeed.init.Init() I think it's because of the flash attention – disable for stage 3
-        # with deepspeed.zero.Init():
-        model = LlamaForCausalLM.from_pretrained(
-            base_model, 
-            # load_in_4bit=True,
-            attn_implementation="flash_attention_2",
-            torch_dtype="auto", # torch.bfloat16,  # you may change it with different models
-            token=token)
+        # with deepspeed.zero.Init():]
+        if not quantized:
+            model = LlamaForCausalLM.from_pretrained(
+                base_model, 
+                # load_in_4bit=True,
+                attn_implementation="flash_attention_2",
+                torch_dtype="auto", # torch.bfloat16,  # you may change it with different models
+                token=token)
+        else:
+            model = LlamaForCausalLM.from_pretrained(
+                base_model, 
+                attn_implementation="flash_attention_2",
+                torch_dtype="auto", # torch.bfloat16,  # you may change it with different models
+                quantization_config=BitsAndBytesConfig(
+                                load_in_4bit=True,
+                                bnb_4bit_compute_dtype=torch.bfloat16,  # bfloat16 is recommended
+                                bnb_4bit_use_double_quant=False,
+                                bnb_4bit_quant_type='nf4',
+                            ),
+                token=token)
         tokenizer = AutoTokenizer.from_pretrained(base_model, token=token, torch_dtype="auto", return_tensors="pt")
     else:
         model = LlamaForCausalLM.from_pretrained(base_model, attn_implementation="flash_attention_2",  device_map=device, token=token)
@@ -100,8 +112,8 @@ def main():
     # Set the peft arguments
     # loftq_config = LoftQConfig(loftq_bits=4) # set 8bit quantization
     lora_config = LoraConfig(
-            r=16,
-            lora_alpha=32,
+            r=32,
+            lora_alpha=64,
             target_modules="all-linear",
             lora_dropout=0.05,
             bias="none",
@@ -145,11 +157,9 @@ def main():
             max_seq_length=max_seq_length,
         ))
     
-    accelerator.print("Training started")
-    
     # Train the model
-    trainer.train(resume_from_checkpoint = True)
-
+    accelerator.print("Training started")
+    trainer.train()
     accelerator.print("Training finished")
     
     if accelerator.is_main_process:
