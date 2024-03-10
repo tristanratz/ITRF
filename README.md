@@ -1,6 +1,15 @@
 
 This is the Repo for the work WORK IN PROGRESS
 
+# Using the model
+
+To load the model simply use the model/ folder where the LLM and the reranker can be loaded.
+Models will be automatically downloaded from huggingface.
+
+# Running the inference
+
+To just run the inference and interact with the pipeline, please use the main.py script.
+
 # Retriever corpus
 
 To recreate the corpos for this work 
@@ -16,23 +25,37 @@ For the loading of the complete ATLAS wikipedia dump consisting of about 33mio s
 
 # Recreating the dataset
 
-For recreating the dataset you can use the notebook under create_dataset/.
+For recreating the dataset you can run the script in create_dataset/.
 Please note that for the notebook to work, the retriver corpus container must be already working.
 
-The dataset can also be retrieved from [HuggingFace](https://huggingface.co/datasets/tristanratz/DATASET)
+The dataset can also be retrieved from [HuggingFace](https://huggingface.co/datasets/tristanratz/DATASET).
 
-# Training the model
+```python
+from datasets import load_dataset
 
-For training the models please use the python scripts in training/
+dataset = load_dataset("tristanratz/rarit", "llm")
+
+```
+
+Before running the dataset creation for the reranker make sure that you trained the LLM beforehand.
+
+# Training the LLM model
+
+For training the models please use the python scripts in train_llm/.
+Please make sure to have the dataset at hand. 
+
+To accelerate the training process and to use multiple GPUs consider configuring accelerate using
+```bash
+accelerate config --config_file <CONFIG_FILE>
+```
+We optimized and ran our training using deepspeed zero and multiple optimization techniques (more details see train_llm/README) to especially run on 4x RTX 3090.
+
+To run the training for the 13b-qlora variant of our model use "train_llm/run_training.sh".
+
+# Train the Reranker
+
+Content to follow
 
 # Evaluation
 
 Use the script to be found in evaluation to evluate the different parts in 
-
-# Running the inference
-
-To just run the inference and interact with the pipeline, please use the main.py script
-
-FILL INS
-DATASET
-WORK IN PROGRESS

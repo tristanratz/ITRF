@@ -11,3 +11,10 @@ python-dotenv
 tiktoken
 sentence_transformers
 einops
+ragas
+wget
+qdrant-client
+jupyterlab
+huggingfacehub
+cdx_toolkit
+matplotlib
