@@ -151,6 +151,7 @@ def main():
             args=args,
             train_dataset=train_data,
             eval_dataset=val_data, 
+            tokenizer=tokenizer,
             packing=packing, # Packing multiple examples into one sequence
             formatting_func=_formatting_func,
             # data_collator=data_collator,
