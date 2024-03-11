@@ -153,3 +153,7 @@ class LLM:
         # Multiplicate the log-probabilities of the tokens to get the probability of the whole sequence
         prob = [np.prod([p for _, p in b]) for b in batch]
         return batch, prob
+
+    def format_prompt(self, query, context):
+        text = f"<s>Background: {context}\n\n[INST]{query}[/INST][ANS]"
+        return text
