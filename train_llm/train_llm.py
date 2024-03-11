@@ -133,9 +133,9 @@ def main():
     # Load the dataset
     val_set_size = 0.1
 
-    dataset = load_dataset("parquet", data_files="../data/dataset/rarit_dataset_llm_processed2.parquet")
+    dataset = load_dataset("parquet", data_files="../data/dataset/itrf_dataset_llm_processed2.parquet")
     len(dataset["train"])
-    # open("../data/dataset/rarit_dataset_llm.parquet")
+    # open("../data/dataset/itrf_dataset_llm.parquet")
 
     #split thte data to train/val set
     train_val = dataset["train"].train_test_split(

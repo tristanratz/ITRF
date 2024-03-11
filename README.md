@@ -1,5 +1,5 @@
 
-This is the Repo for the work WORK IN PROGRESS
+This is the Repo for the work ITRF: Instruction Tuned Retriever Finetuning.
 
 # Using the model
 
@@ -33,7 +33,7 @@ The dataset can also be retrieved from [HuggingFace](https://huggingface.co/data
 ```python
 from datasets import load_dataset
 
-dataset = load_dataset("tristanratz/rarit", "llm")
+dataset = load_dataset("tristanratz/itrf", "llm")
 
 ```
 

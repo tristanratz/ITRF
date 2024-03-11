@@ -13,7 +13,7 @@ parser.add_argument('--n', type=int, default=7500, help='The number of samples p
 parser.add_argument('--collection', type=str, default="retriever", help='Collection name in the vector database')
 parser.add_argument('--k', type=int, default=3, help='The number of contexts per sample')
 parser.add_argument('--options', type=bool, default=True, help='If the multiple choice options should be part of query')
-parser.add_argument('--continue_point', type=str, default="", help='Conitnue from this dataset.')
+parser.add_argument('--continue_point', type=str, default=None, help='Conitnue from this dataset.')
 parser.add_argument('--sample_skip', type=int, default=0, help='Conitnue from this point in the dataset.')
 
 args = parser.parse_args()
@@ -25,10 +25,10 @@ col_name = args.collection
 k=args.k
 options_enabled = args.options
 continue_point = args.continue_point
-data_path = '../data/dataset/rarit_dataset_llm'
+data_path = '../data/dataset/itrf_dataset_llm'
 #######
 
-rarit_dataset_buffer = []
+itrf_dataset_buffer = []
 
 datasets_openqa = ["tau/commonsense_qa", "math_qa", "web_questions", "wiki_qa", "yahoo_answers_qa", "freebase_qa", "ms_marco"]
 datasets_reading = ["coqa", "drop", "narrativeqa", "newsqa", ("pubmed_qa", "pqa_unlabeled"), "quail", "quarel", "squad_v2"] # "natural_questions", "trivia_qa",  "search_qa", "", "duorc", "ropes"
@@ -50,13 +50,16 @@ for d in task_list:
         cp = True
     if cp:
         tmp.append(d)
-task_list = tmp
+if continue_point in task_list:
+    itrf = pd.read_parquet(f"{data_path}.parquet")
+    task_list = tmp
+else:
+    itrf = DataFrame(columns=["split", "query", "prediction", "context", "src", "id", "context_src", "context_id", "original_context", "task", "domain"])
 
-rarit_dataset_buffer = []
-rarit = DataFrame(columns=["split", "query", "prediction", "context", "src", "id", "context_src", "context_id", "original_context", "task", "domain"])
-if continue_point != "":
-    rarit = pd.read_parquet(f"{data_path}.parquet")
-total = len(rarit)
+print(task_list)
+
+itrf_dataset_buffer = []
+total = len(itrf)
 
 sentinel = object() # Used to check if the iterators are empty
 
@@ -141,26 +144,26 @@ def save_example(i, start, last_time, example, dname, force=False):
     save_examples(i, start, last_time, [example], dname, force=force)
 
 def save_examples(i, start, last_time, examples, dname, force=False):
-    global rarit_dataset_buffer
-    global rarit
+    global itrf_dataset_buffer
+    global itrf
     global total
     # Save the dataset to a file
-    rarit_dataset_buffer.extend(examples)
+    itrf_dataset_buffer.extend(examples)
     total += len(examples)
 
     if i % 100 == 0 or force:
         current_time = time.time()
         print(f"Processed {i} {dname} examples, time: {str(timedelta(seconds=(last_time - start)))}, last 100 in {str(timedelta(seconds=(current_time - last_time)))}, total: {total} examples")
         last_time = current_time
-        if len(rarit_dataset_buffer) > 0:
-            if rarit.empty:
-                rarit = DataFrame(rarit_dataset_buffer)
+        if len(itrf_dataset_buffer) > 0:
+            if itrf.empty:
+                itrf = DataFrame(itrf_dataset_buffer)
             else:
-                df = DataFrame(rarit_dataset_buffer)
-                rarit = pd.concat([rarit, df])
-            rarit_dataset_buffer.clear()
-        rarit.to_parquet(f"{data_path}.parquet")
-        # rarit.to_csv(f"{data_path}.csv", escapechar='\\')
+                df = DataFrame(itrf_dataset_buffer)
+                itrf = pd.concat([itrf, df])
+            itrf_dataset_buffer.clear()
+        itrf.to_parquet(f"{data_path}.parquet")
+        # itrf.to_csv(f"{data_path}.csv", escapechar='\\')
 
 def skip(dataset, dname):
     if dname == continue_point:

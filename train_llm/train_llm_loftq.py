@@ -133,7 +133,7 @@ def main():
     accelerator.print("Model created")
 
     # Load the dataset
-    dataset = load_dataset("parquet", data_files="../data/dataset/rarit_dataset_llm_processed2.parquet")
+    dataset = load_dataset("parquet", data_files="../data/dataset/itrf_dataset_llm_processed2.parquet")
 
     # split thte data to train/val set
     val_set_size = 0.1
