@@ -38,7 +38,7 @@ seed = 4048
 data_path = '../data/dataset/itrf_dataset_reranker'
 #######
 
-datasets_openqa = ["tau/commonsense_qa", "math_qa", "web_questions", "wiki_qa", "yahoo_answers_qa", "freebase_qa", "ms_marco"]
+datasets_openqa = ["tau/commonsense_qa", "math_qa", "web_questions", "wiki_qa", "yahoo_answers_qa", "freebase_qa",("ms_marco", 'v2.1')]
 datasets_reading = [("pubmed_qa", "pqa_unlabeled"), "quarel", ]
 
 task_list = []
@@ -113,7 +113,7 @@ def make_example(query: str, ground_truth:str, dataset_name:str, context = None,
         contexts = [{
             "text": result[0].page_content, 
             "src": result[0].metadata["src"] if "src" in result[0].metadata.keys() else "unknown", 
-            "id": result[0].metadata["id"] if "id" in result[0].metadata.keys() else result[0].metadata["title"],
+            "id": str(result[0].metadata["id"] if "id" in result[0].metadata.keys() else result[0].metadata["title"]),
             "retriever_score": result[1],
             "llm_score": lscore,
             "retriever_softmax": rsoft, 
@@ -382,9 +382,9 @@ if dname in task_list:
 # ms_marco
 #####
         
-dname = datasets_openqa[6]
-if dname in task_list:
-    dataset = load_dataset(dname, split="train")
+dname = datasets_openqa[6][0]
+if datasets_openqa[6] in task_list:
+    dataset = load_dataset(dname, datasets_openqa[6][1], split="train")
     shuffled = iter(dataset.shuffle(seed=seed))
     start = time.time()
     last_time = start
@@ -396,11 +396,15 @@ if dname in task_list:
             break
 
         query = example["query"]
-        prediction =  example['answers'][0]
         example_id = dname + example["query_type"] + str(example["query_id"])
 
-        context_id = example["passages"]["is_selected"].index(1)
-        context = example["passages"]["passage_text"][context_id]
+        if 1 in example["passages"]["is_selected"]:
+            prediction =  example['answers'][0]
+            context_id = example["passages"]["is_selected"].index(1)
+            context = example["passages"]["passage_text"][context_id]
+        else:
+            prediction = "I don't know."
+            context = example["passages"]["passage_text"][0]
 
         examples = make_examples(query, prediction, dname, example_id=example_id, context=context, k=k, retrieval=True, task="qa", domain="openqa")
         
@@ -416,7 +420,7 @@ if dname in task_list:
 #####
 
 dname = datasets_reading[0][0]
-if dname in task_list:
+if datasets_reading[0] in task_list:
     dataset = load_dataset(dname,  datasets_reading[0][1], split="train")
     shuffled = iter(dataset.shuffle(seed=seed))
     start = time.time()
