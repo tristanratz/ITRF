@@ -8,7 +8,7 @@ import numpy as np
 
 
 class LLM:
-    def __init__(self, size="13", quantized=True):
+    def __init__(self, size="13", quantized=True, model_path=None, adapter=True):
         # Load environment variables from .env file
         load_dotenv("../.env")
 
@@ -19,9 +19,13 @@ class LLM:
         self.device = self.accelerator.device
         self.accelerator.print(f"Using device: {self.device}")
 
-        load_dotenv("../.env")
         base_model = f"meta-llama/Llama-2-{size}b-chat-hf"
-        adapter_path = f"tristanratz/itrf-{size}b-{'q' if quantized else ''}lora"
+        load_dotenv("../.env")
+        if model_path is not None:
+            base_model = model_path
+
+        if adapter:
+            adapter_path = f"tristanratz/itrf-{size}b-{'q' if quantized else ''}lora"
 
         self.tokenizer = AutoTokenizer.from_pretrained(base_model, token=token, torch_dtype="auto", return_tensors="pt")
 
@@ -48,15 +52,17 @@ class LLM:
                     token=token)
             self.tokenizer.add_special_tokens({"additional_special_tokens": ["<>", "<inst_e>"]})
         self.model.resize_token_embeddings(len(self.tokenizer))
+        self.model.eval()
 
         # For batch tokenization and packing
         self.tokenizer.pad_token = "[PAD]"
         self.tokenizer.padding_side = "left"
 
-        self.model = PeftModel.from_pretrained(
-            self.model,
-            adapter_path,
-        )
+        if adapter:
+            self.model = PeftModel.from_pretrained(
+                self.model,
+                adapter_path,
+            )
 
 
     def inference(self, input):
@@ -64,9 +70,9 @@ class LLM:
 
     def inference_score(self, input):
 
-        outputs, scores = self.inference_batch_score([input])
+        outputs, tok_scores, probs = self.inference_batch_score([input])
 
-        return outputs[0], scores[0]
+        return outputs[0], probs[0]
     
     def inference_batch(self, inputs):
         return self.inference_batch_score(inputs)[0]
@@ -130,7 +136,8 @@ class LLM:
         # Inspired by: https://discuss.huggingface.co/t/announcement-generation-get-probabilities-for-generated-output/30075/7
         input_ids = self.tokenizer([inp + pred for inp, pred in zip(input_texts, pred_texts)], padding=True, return_tensors="pt").input_ids.to(self.device)
         ans_len = [self.tokenizer([pred], return_tensors="pt").input_ids.shape[1]-1 for pred in pred_texts]
-        outputs = self.model(input_ids)
+        with torch.no_grad():
+            outputs = self.model(input_ids)
         probs = torch.log_softmax(outputs.logits, dim=-1).detach()
 
         # collect the probability of the generated token -- probability at index 0 corresponds to the token at index 1
@@ -156,4 +163,8 @@ class LLM:
 
     def format_prompt(self, query, context):
         text = f"<s>Background: {context}\n\n[INST]{query}[/INST][ANS]"
+        return text
+    
+    def format_llmware_prompt(self, query, context):
+        text = f"<human>: {context}\n{query}\n<bot>:"
         return text
