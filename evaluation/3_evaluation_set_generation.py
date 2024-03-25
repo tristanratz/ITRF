@@ -15,7 +15,7 @@ from model.llm import LLM
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--collection', type=str, default="retriever", help='Collection name in the vector database')
-parser.add_argument('--k', type=int, default=10, help='The number of contexts per sample')
+parser.add_argument('--k', type=int, default=5, help='The number of contexts per sample')
 parser.add_argument('--sort_by', type=str, default=None, help='The column to sort the contexts by')
 parser.add_argument('--model', type=str, default="itrf", help='The model used for reranking')
 parser.add_argument('--device', type=str, default="cuda:2", help='The device used for inference')
@@ -54,15 +54,11 @@ elif model == "llmware":
 
 sentinel = object() # Used to check if the iterators are empty
 
-# llm = LLM(size=7, quantized=False, adapter=False, model_path="llmware/dragon-llama-7b-v0")
-
 def softmax(x):
     """Compute softmax values for each sets of scores in x."""
     return x / np.sum(x)
 
-
 itrf = pd.read_parquet(f"{input_path}.parquet")
-reranker = CrossEncoder(base_model, num_labels=1, device=device)
 
 total = 0
 total_contexts = 0
@@ -116,6 +112,6 @@ def generate_answer(sample):
 
     return contexts
 
-itrf["contexts"] = itrf.apply(generate_answer)
+itrf["contexts"] = itrf.apply(generate_answer, axis=1)
 
 itrf.to_parquet(f"{data_path}.parquet")
