@@ -54,8 +54,8 @@ class MSEEval(SentenceEvaluator):
         else:
             out_txt = ":"
 
-        loss_fnc = torch.nn.BCEWithLogitsLoss()
-        activation_fnc = torch.nn.Identity()
+        loss_fnc = torch.nn.MSELoss()
+        activation_fnc = torch.nn.Sigmoid()
 
         logger.info("Evaluation on the "+self.name+" dataset"+out_txt)
         self.dataloader.collate_fn = model.smart_batching_collate

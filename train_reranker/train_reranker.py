@@ -15,8 +15,8 @@ device = "cuda:1"
 val_set_size = 0.05
 
 base_model = "BAAI/bge-reranker-large"
-dataset = load_dataset("parquet", data_files="../data/dataset/itrf_dataset_reranker_processed.parquet")
-output_dir = "../models/itrf_reranker-large"
+dataset = load_dataset("parquet", data_files="../data/dataset/itrf_dataset_reranker_llmware.parquet")
+output_dir = "../models/itrf_reranker-large-llmware"
 len(dataset["train"])
 # open("../data/dataset/itrf_dataset_llm.parquet")
 
@@ -29,10 +29,10 @@ val_data = train_val["test"].shuffle(seed=2024)
 
 # Create Input Samples
 print("Create Input Samples")
-train_samples = [InputExample(texts=[ex["query"], ex["context"]], label=ex["llm_weighted_softmax"]) for ex in train_data]
-val_samples = [InputExample(texts=[ex["query"], ex["context"]], label=ex["llm_weighted_softmax"]) for ex in val_data]
+train_samples = [InputExample(texts=[ex["query"], ex["context"]], label=ex["llm_softmax"]) for ex in train_data]
+val_samples = [InputExample(texts=[ex["query"], ex["context"]], label=ex["llm_softmax"]) for ex in val_data]
 
-train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=16)
+train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=12)
 val_dataloader = DataLoader(val_samples, shuffle=True, batch_size=3)
 evaluator = MSEEval(val_dataloader, )
 
@@ -46,6 +46,8 @@ cross_encoder.fit(
     train_dataloader=train_dataloader,
     evaluator=evaluator,
     epochs=1,
+    loss_fct=torch.nn.MSELoss(),
+    activation_fct=torch.nn.Sigmoid(),
     warmup_steps=100,
     evaluation_steps=1000,
     output_path=output_dir,
