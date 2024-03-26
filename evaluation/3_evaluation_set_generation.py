@@ -6,6 +6,7 @@ import pandas as pd
 from pandas import DataFrame
 import numpy as np
 import argparse
+import torch
 
 import sys
 import os
@@ -39,12 +40,12 @@ reranker_name = reranker if reranker is not None else "retriever"
 data_path = f'../data/dataset/itrf_evaluation_generation_{reranker_name}_{model}'
 device=args.device
 sort_by=args.sort_by
-
+start = time.time()
 #######
 
 if model == "base":
     base_model = "meta-llama/Llama-2-7b-chat-hf"
-    llm = LLM(size=7, quantized=False, adapter=False, model_path=base_model, device=device)
+    llm = LLM(size=7, quantized=False, adapter=False, model_path=base_model, device=device, dftype=torch.bfloat16)
 elif model == "itrf":
     llm = LLM(size=7, quantized=False, device=device)
 elif model == "llmware":
@@ -106,7 +107,7 @@ def generate_answer(sample):
     contexts = contexts[sort_ind]
 
     if total % 100 == 0:
-        print(f"Processed {total} samples, with {total_contexts} contexts.")
+        print(f"Processed {total} samples, with {total_contexts} contexts. Time passed: {timedelta(seconds=time.time()-start)}")
     total += 1
     total_contexts += len(contexts)
 

@@ -8,7 +8,7 @@ import numpy as np
 
 
 class LLM:
-    def __init__(self, size="13", quantized=True, model_path=None, adapter=True):
+    def __init__(self, size="13", quantized=True, model_path=None, adapter=True, device=None, dftype="auto"):
         # Load environment variables from .env file
         load_dotenv("../.env")
 
@@ -16,7 +16,7 @@ class LLM:
         token = os.getenv('HUGGINGFACE_TOKEN')
         
         self.accelerator = Accelerator()
-        self.device = self.accelerator.device
+        self.device = self.accelerator.device if not device else device
         self.accelerator.print(f"Using device: {self.device}")
 
         base_model = f"meta-llama/Llama-2-{size}b-chat-hf"
@@ -37,7 +37,7 @@ class LLM:
                     torch_dtype="auto", # torch.bfloat16,  # you may change it with different models
                     quantization_config=BitsAndBytesConfig(
                                     load_in_4bit=True,
-                                    bnb_4bit_compute_dtype=torch.bfloat16,  # bfloat16 is recommended
+                                    bnb_4bit_compute_dtype=dftype,  # bfloat16 is recommended
                                     bnb_4bit_use_double_quant=False,
                                     bnb_4bit_quant_type='nf4',
                                 ),
@@ -48,11 +48,11 @@ class LLM:
                     base_model,
                     device_map=self.device,
                     attn_implementation="flash_attention_2",
-                    torch_dtype="auto", # torch.bfloat16,  # you may change it with different models
+                    torch_dtype=dftype,  # you may change it with different models
                     token=token)
             self.tokenizer.add_special_tokens({"additional_special_tokens": ["<>", "<inst_e>"]})
         self.model.resize_token_embeddings(len(self.tokenizer))
-        self.model.eval()
+        self.model = self.model.eval()
 
         # For batch tokenization and packing
         self.tokenizer.pad_token = "[PAD]"
@@ -89,13 +89,15 @@ class LLM:
         model_inputs = self.tokenizer(inputs, return_tensors="pt", padding=True, truncation=True).to(self.device)
         input_length = model_inputs.input_ids.shape[1]
 
-        outputs = self.model.generate(
-            **model_inputs,
-            output_scores=True, 
-            do_sample=True,
-            temperature=0.7,
-            return_dict_in_generate=True,
-        ) # do_sample=True to generate text more creatively
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **model_inputs,
+                output_scores=True, 
+                do_sample=True,
+                temperature=0.7,
+                return_dict_in_generate=True,
+                max_new_tokens=10,
+            ) # do_sample=True to generate text more creatively
 
         # Decode the output sequences
         output_seqs = self.tokenizer.batch_decode(outputs.sequences[:, input_length:], skip_special_tokens=True)
@@ -113,7 +115,7 @@ class LLM:
             tsc = []
             for s, t in zip(sc, out):
                 if not t in self.tokenizer.all_special_ids:
-                    tsc.append((self.tokenizer.decode(t)[0], np.exp(s)))
+                    tsc.append((self.tokenizer.decode(t), np.exp(s)))
             tok_scores.append(tsc)
 
         # Calculate the probability of the whole sequence
@@ -167,4 +169,9 @@ class LLM:
     
     def format_llmware_prompt(self, query, context):
         text = f"<human>: {context}\n{query}\n<bot>:"
+        return text
+    
+    def format_base_prompt(self, query, context):
+        text = f"""Use the following pieces of information to answer the user’s question. If you don’t know the answer, just say that you don’t know, don’t try to make up an answer.\n\nContext: {context}\nQuestion: {query}\n\nOnly return the helpful answer below and nothing else.\nAnswer:"""
+
         return text
