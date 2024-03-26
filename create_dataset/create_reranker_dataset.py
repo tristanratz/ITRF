@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 from dotenv import load_dotenv
 import numpy as np
 import argparse
+import hashlib
 
 import sys
 import os
@@ -24,6 +25,9 @@ parser.add_argument('--k', type=int, default=10, help='The number of contexts pe
 parser.add_argument('--options', type=bool, default=False, help='If the multiple choice options should be part of query')
 parser.add_argument('--continue_point', type=str, default=None, help='Conitnue from this dataset.')
 parser.add_argument('--sample_skip', type=int, default=0, help='Conitnue from this point in the dataset.')
+parser.add_argument('--model', type=str, default="itrf", help='Conitnue from this point in the dataset.')
+parser.add_argument('--device_retriever', type=str, default="cuda:2", help='The device used for retrieval')
+parser.add_argument('--device_llm', type=str, default="cuda:3", help='The device used for inference')
 
 args = parser.parse_args()
 
@@ -35,7 +39,10 @@ k=args.k
 options_enabled = args.options
 continue_point = args.continue_point
 seed = 4048
-data_path = '../data/dataset/itrf_dataset_reranker'
+model = args.model
+data_path = f'../data/dataset/itrf_dataset_reranker_{model}'
+device_retriever=args.device_retriever
+device_llm=args.device_llm
 #######
 
 datasets_openqa = ["tau/commonsense_qa", "math_qa", "web_questions", "wiki_qa", "yahoo_answers_qa", "freebase_qa",("ms_marco", 'v2.1')]
@@ -67,7 +74,7 @@ total = len(itrf)
 
 sentinel = object() # Used to check if the iterators are empty
 
-embedding = HuggingFaceBgeEmbeddings(model_name="../models/retriever/bge-base-en-v1.5", model_kwargs={"device": "cuda:1"})
+embedding = HuggingFaceBgeEmbeddings(model_name="../models/retriever/bge-base-en-v1.5", model_kwargs={"device": device_retriever})
 
 # Create the retriever
 client = QdrantClient(url="http://localhost:6333")
@@ -76,13 +83,15 @@ db = Qdrant(client,
             embeddings=embedding,
             )
 
+if model == "itrf":
+    llm = LLM(size=7, quantized=False)
+elif model == "llmware":
+    llm = LLM(size=7, quantized=False, adapter=False, model_path="llmware/dragon-llama-7b-v0", device=device_llm)
 
-llm = LLM(size=7, quantized=False)
 
 def softmax(x):
     """Compute softmax values for each sets of scores in x."""
-    e_x = np.exp(x)
-    return e_x / e_x.sum()
+    return x / np.sum(x)
 
 def search(query: str, k: int = 3):
     success = False
@@ -97,7 +106,7 @@ def search(query: str, k: int = 3):
     return results
 
 # This function creates an example with the query and the prediction and the top k results
-def make_example(query: str, ground_truth:str, dataset_name:str, context = None, example_id = None, k: int = 3, split = "llm", retrieval = True, task="", domain=""):
+def make_example(query: str, ground_truth:str, dataset_name:str, context = None, example_id = None, k: int = 3, split = "reranker", retrieval = True, task="", domain=""):
     contexts = []
     if retrieval:
         # Search for the query
@@ -105,7 +114,10 @@ def make_example(query: str, ground_truth:str, dataset_name:str, context = None,
 
         # Get the softmax of the scores
         retriever_softmax = softmax([result[1] for result in results])
-        context_texts = [llm.format_prompt(query, result[0].page_content) for result in results]
+        if model == "itrf":
+            context_texts = [llm.format_prompt(query, result[0].page_content) for result in results]
+        elif model == "llmware":
+            context_texts = [llm.format_llmware_prompt(query, result[0].page_content) for result in results]
         llm_scores = llm.to_tokens_and_logprobs(context_texts, [ground_truth] * k)[1]
         llm_softmax = softmax(llm_scores)
 
@@ -190,6 +202,26 @@ def save_examples(i, start, last_time, examples, dname, force=False):
                 df = DataFrame(itrf_dataset_buffer)
                 itrf = pd.concat([itrf, df])
             itrf_dataset_buffer.clear()
+        if force:
+            ###
+            # Clean the dataset
+            ####
+
+            # Remove duplicates
+            itrf.drop_duplicates(inplace=True)
+
+            # Add a new id per query group
+            itrf["id_new"] = (itrf["id"] + "_" + itrf["query"] + "_" + itrf['ground_truth']).apply(lambda x: hashlib.md5(x.encode()).hexdigest())
+            
+            # Repair index
+            index = range(len(itrf))
+            itrf.index = index
+
+            # Remove examples with na fields
+            itrf.dropna(inplace=True)
+
+            # Remove the examples with unknown answer
+            itrf = itrf[itrf["ground_truth"] != "I don't know."]
         itrf.to_parquet(f"{data_path}.parquet")
         # itrf.to_csv(f"{data_path}.csv", escapechar='\\')
 
@@ -208,7 +240,7 @@ def skip(dataset, dname):
 ##################
 
 #####
-# TriviaQA
+# commonsense_qa
 #####
 
 dname = datasets_openqa[0]
@@ -467,3 +499,5 @@ if dname in task_list:
         examples = make_examples(query, prediction, dname, example_id=example_id, k=k, retrieval=True, task="mc", domain="rc")
             
         save_examples(i, start, last_time, examples, dname)
+# Save the dataset to a file
+save_examples(i, start, last_time, [], dname, force=True)
