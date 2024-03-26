@@ -35,7 +35,7 @@ reranker = args.reranker
 if reranker is None:
     input_path = '../data/dataset/itrf_evaluation_retrieval_processed'
 else:
-    input_path = f'../data/dataset/itrf_evaluation_rererank_{reranker}'
+    input_path = f'../data/dataset/itrf_evaluation_rerank_{reranker}'
 reranker_name = reranker if reranker is not None else "retriever"
 data_path = f'../data/dataset/itrf_evaluation_generation_{reranker_name}_{model}'
 device=args.device

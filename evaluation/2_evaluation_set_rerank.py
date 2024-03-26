@@ -25,7 +25,7 @@ args = parser.parse_args()
 col_name = args.collection
 seed = 4048
 model = args.model
-data_path = f'../data/dataset/itrf_evaluation_rererank_{model}'
+data_path = f'../data/dataset/itrf_evaluation_rerank_{model}'
 device=args.device
 
 if model == "base":
