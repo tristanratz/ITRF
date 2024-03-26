@@ -1,12 +1,9 @@
 from datasets import load_dataset
 import torch
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding
 from sentence_transformers import InputExample
 from dotenv import load_dotenv
-import os
 from sentence_transformers import  CrossEncoder
 from torch.utils.data import DataLoader
-from nvidia_smi import nvmlInit, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo
 from eval import MSEEval
 import argparse
 # Cross Encoder BGE
@@ -17,6 +14,8 @@ parser.add_argument('--model', type=str, default="itrf", help='The model used fo
 parser.add_argument('--error_term', type=str, default="mse", help='The model used for reranking')
 
 args = parser.parse_args()
+
+load_dotenv("../.env")
 
 device = args.device
 model = args.model
