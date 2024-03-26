@@ -8,15 +8,26 @@ from sentence_transformers import  CrossEncoder
 from torch.utils.data import DataLoader
 from nvidia_smi import nvmlInit, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo
 from eval import MSEEval
+import argparse
 # Cross Encoder BGE
 
-device = "cuda:1"
+parser = argparse.ArgumentParser()
+parser.add_argument('--device', type=str, default="cuda:0", help='The device used for inference')
+parser.add_argument('--model', type=str, default="itrf", help='The model used for reranking')
+parser.add_argument('--error_term', type=str, default="mse", help='The model used for reranking')
+
+args = parser.parse_args()
+
+device = args.device
+model = args.model
+error_term = args.error_term
 
 val_set_size = 0.05
 
 base_model = "BAAI/bge-reranker-large"
-dataset = load_dataset("parquet", data_files="../data/dataset/itrf_dataset_reranker_llmware.parquet")
-output_dir = "../models/itrf_reranker-large-llmware"
+dataset = load_dataset("parquet", data_files=f"../data/dataset/itrf_dataset_reranker_{model}.parquet")
+output_dir = f"../models/itrf_reranker-large-{model}_{error_term}"
+
 len(dataset["train"])
 # open("../data/dataset/itrf_dataset_llm.parquet")
 
