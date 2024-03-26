@@ -216,7 +216,7 @@ if dname in task_list:
 
         answer = ""
         if options_enabled:
-            answer = str(example["answer"]+1) + ") " + str(example["choices"][example["answer"]])
+            answer = str(example["answer"]+1) + ") " # + str(example["choices"][example["answer"]])
 
         answer += str(example["choices"][example["answer"]])
 
