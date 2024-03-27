@@ -1,4 +1,4 @@
-matplotlibaccelerate==0.27.2
+accelerate==0.27.2
 aiohttp==3.9.0
 aiosignal==1.3.1
 annotated-types==0.6.0
@@ -220,6 +220,7 @@ ruamel.yaml.clib @ file:///croot/ruamel.yaml.clib_1666302247304/work
 safetensors==0.4.2
 scikit-learn==1.3.2
 scipy==1.11.4
+seaborn==0.13.2
 Send2Trash==1.8.2
 sentence-transformers==2.2.2
 sentencepiece==0.1.99
