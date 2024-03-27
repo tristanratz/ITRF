@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv("../.env")
+
 from ragas.metrics import (
     answer_relevancy,
     faithfulness,
@@ -5,34 +8,86 @@ from ragas.metrics import (
     context_precision,
     answer_similarity,
 )
-from dotenv import load_dotenv
-from pandas import read_parquet
+from ragas import evaluate
+from pandas import read_parquet, DataFrame
+import pandas as pd
+from datasets import Dataset
+from argparse import ArgumentParser
+import json
 
-load_dotenv("../.env")
+parser = ArgumentParser()
+
+# Parse the arguments
+parser.add_argument("--reranker", type=str, help="The reranker model used", required=True)
+parser.add_argument("--llm", type=str, help="The llm model used", required=True)
+parser.add_argument("--n", type=int, default=800, help="The number of samples to evaluate")
+parser.add_argument("--resume", type=bool, default=False, help="Continue from the last evaluation")
+
+args = parser.parse_args()
+
 
 ###########
 # Config variables
-reranker = "llmware"
-llm = "llmware"
+reranker = args.reranker
+llm = args.llm
+seed = 4048
+n = args.n
 ###########
 
 # Load the dataset
-data_path = f"data/dataset/itrf_evaluation_{reranker}_{llm}"
-itrf = read_parquet(f"{data_path}.parquet")
+input_path = f"../data/dataset/itrf_evaluation_generation_{reranker}_{llm}_mse"
+itrf = read_parquet(f"{input_path}.parquet")
+data_path =  f"../data/evaluation_results/itrf_evaluation_{reranker}_{llm}"
+datasets = itrf["src"].unique()
 
-def run_eval(sample):
-    # TODO VERIFY THIS
-
+def rank_context(sample, get_answer=False):
     # Select answer by reranker times llm score
+    # Get context with the highest score = llm_softmax * reranker_softmax
+    contexts = sample["all_contexts"]
+    highest_score_context = max(contexts, key=lambda x: x['reranker_softmax'] * x['llm_softmax'])
 
-    sample["faithfulness"] = faithfulness(sample["answer"], sample["contexts"])
-    sample["answer_relevancy"] = answer_relevancy(sample["answer"], sample["contexts"])
+    if get_answer:
+        return highest_score_context["predicted"].strip()
+    else:
+        return [highest_score_context["text"]]
 
-    # Calculate the context recall and precision
-    sample["context_recall"] = context_recall(sample["answer"], sample["contexts"])
-    sample["context_precision"] = context_precision(sample["answer"], sample["contexts"])
+# Prepare data
+itrf["question"] = itrf["query"]
+itrf.rename(columns={"contexts": "all_contexts",}, inplace=True)
+itrf["answer"] = itrf.apply(rank_context, axis=1, get_answer=True)
+itrf["ground_truths"] = itrf["ground_truth"].apply(lambda x: [x])  # "ground_truth": "ground_truths"
+itrf["contexts"] = itrf.apply(rank_context, axis=1)
 
-    pass
+result = None
+result_score = []
 
-itrf = itrf.apply(run_eval, axis=1)
-itrf.to_parquet(f"{data_path}_evaluated.parquet")
+if args.resume:
+    result = read_parquet(f"{data_path}_evaluated.parquet")
+    result_score = json.load(open(f"{data_path}_evaluated.json"))
+
+for d in datasets:
+
+    if args.resume and d in result["dataset"].unique():
+        continue
+
+    print(f"Processing dataset: {d}")
+    df = itrf[itrf["src"] == d].sample(n, random_state=seed)
+    ds = Dataset.from_pandas(df)
+    results = evaluate(ds, metrics=[
+        faithfulness, 
+        answer_relevancy, 
+        answer_similarity, 
+        context_recall, 
+        context_precision
+    ])
+    if result is None:
+        result = results.to_pandas()
+    else:
+        result = pd.concat([result, results.to_pandas()])
+
+    results["dataset"] = d
+    result_score.append(results)
+
+    json.dump(result_score, open(f"{data_path}_evaluated.json", "w"))
+
+    result.to_parquet(f"{data_path}_evaluated.parquet")
