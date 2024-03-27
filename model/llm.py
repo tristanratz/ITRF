@@ -27,11 +27,11 @@ class LLM:
         if adapter:
             adapter_path = f"tristanratz/itrf-{size}b-{'q' if quantized else ''}lora"
 
-        self.tokenizer = AutoTokenizer.from_pretrained(base_model, token=token, torch_dtype="auto", return_tensors="pt")
+        self.tokenizer = AutoTokenizer.from_pretrained(base_model, token=token, return_tensors="pt")
 
         if quantized:
             self.model = LlamaForCausalLM.from_pretrained(
-                    base_model,
+                    base_model if not adapter else adapter_path,
                     device_map=self.device,
                     attn_implementation="flash_attention_2",
                     torch_dtype="auto", # torch.bfloat16,  # you may change it with different models
@@ -48,22 +48,22 @@ class LLM:
                     base_model,
                     device_map=self.device,
                     attn_implementation="flash_attention_2",
-                    torch_dtype=dftype,  # you may change it with different models
+                    torch_dtype=torch.bfloat16,  # you may change it with different models
                     token=token)
             self.tokenizer.add_special_tokens({"additional_special_tokens": ["<>", "<inst_e>"]})
         self.model.resize_token_embeddings(len(self.tokenizer))
-        self.model = self.model.eval()
 
         # For batch tokenization and packing
         self.tokenizer.pad_token = "[PAD]"
         self.tokenizer.padding_side = "left"
 
-        if adapter:
-            self.model = PeftModel.from_pretrained(
-                self.model,
-                adapter_path,
-            )
+        # if adapter:
+        #     self.model = PeftModel.from_pretrained(
+        #         self.model,
+        #         adapter_path,
+        #     )
 
+        self.model = self.model.eval()
 
     def inference(self, input):
         return self.inference_score(input)[0]
@@ -96,9 +96,9 @@ class LLM:
                 do_sample=True,
                 temperature=0.7,
                 return_dict_in_generate=True,
-                max_new_tokens=10,
+                max_new_tokens=15,
             ) # do_sample=True to generate text more creatively
-
+        
         # Decode the output sequences
         output_seqs = self.tokenizer.batch_decode(outputs.sequences[:, input_length:], skip_special_tokens=True)
         # whole_seqs = self.tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
