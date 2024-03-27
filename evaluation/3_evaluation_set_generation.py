@@ -21,7 +21,7 @@ parser.add_argument('--sort_by', type=str, default=None, help='The column to sor
 parser.add_argument('--model', type=str, default="itrf", help='The model used for reranking')
 parser.add_argument('--device', type=str, default="cuda:2", help='The device used for inference')
 parser.add_argument('--reranker', type=str, default=None, help='The reranker model used for reranking')
-
+parser.add_argument('--error_term', type=str, default="mse", help='The error term used for reranking training')
 
 args = parser.parse_args()
 
@@ -32,12 +32,13 @@ k=args.k
 seed = 4048
 model = args.model
 reranker = args.reranker
+error_term = args.error_term
 if reranker is None:
     input_path = '../data/dataset/itrf_evaluation_retrieval_processed'
 else:
-    input_path = f'../data/dataset/itrf_evaluation_rerank_{reranker}'
+    input_path = f'../data/dataset/itrf_evaluation_rerank_{reranker}_{error_term}'
 reranker_name = reranker if reranker is not None else "retriever"
-data_path = f'../data/dataset/itrf_evaluation_generation_{reranker_name}_{model}'
+data_path = f'../data/dataset/itrf_evaluation_generation_{reranker_name}_{model}_{error_term}'
 device=args.device
 sort_by=args.sort_by
 start = time.time()
@@ -86,12 +87,22 @@ def generate_answer(sample):
         contexts_texts = [llm.format_base_prompt(sample["query"], c["text"]) for c in contexts]
     
     # Predict the answers
-    answers, _, scores = llm.inference_batch_score(contexts_texts)
+    if model == "llmware":
+        batch_size = 1
+    else:
+        batch_size = 2
+    answers = []
+    scores = []
+    true_scores = []
+    for i in range(0, len(contexts_texts), batch_size):
+        ans, _, sc = llm.inference_batch_score(contexts_texts[i:i+batch_size])
+        trsc = llm.to_tokens_and_logprobs(contexts_texts[i:i+batch_size], [sample["ground_truth"]] * len(contexts_texts[i:i+batch_size]))[1]
+        answers.extend(ans)
+        scores.extend(sc)
+        true_scores.extend(trsc)
+        
     scores_sm = softmax(scores)
-
-    true_scores = llm.to_tokens_and_logprobs(contexts_texts, [sample["ground_truth"]] * k)[1]
     true_scores_sm = softmax(true_scores)
-
 
     # Save the reranked contexts in the dataset
     for i, c in enumerate(contexts):
@@ -113,6 +124,14 @@ def generate_answer(sample):
 
     return contexts
 
-itrf["contexts"] = itrf.apply(generate_answer, axis=1)
+results = DataFrame(columns=itrf.columns)
 
-itrf.to_parquet(f"{data_path}.parquet")
+for d in itrf["src"].unique():
+    print(f"Processing dataset {d}")
+    df = itrf[itrf["src"] == d].sample(800, random_state=seed)
+    df["contexts"] = df.apply(generate_answer, axis=1)
+    results = pd.concat([results, df], ignore_index=True)
+    results.to_parquet(f"{data_path}.parquet")
+
+print(f"Total time: {timedelta(seconds=time.time()-start)}")
+print("Done!")
