@@ -17,6 +17,7 @@ parser.add_argument('--collection', type=str, default="retriever", help='Collect
 # parser.add_argument('--sample_skip', type=int, default=0, help='Conitnue from this point in the dataset.')
 parser.add_argument('--model', type=str, default="itrf", help='The model used for reranking')
 parser.add_argument('--device', type=str, default="cuda:2", help='The device used for inference')
+parser.add_argument('--error_term', type=str, default="mse", help='The error term used for reranking training')
 
 args = parser.parse_args()
 
@@ -25,15 +26,14 @@ args = parser.parse_args()
 col_name = args.collection
 seed = 4048
 model = args.model
-data_path = f'../data/dataset/itrf_evaluation_rerank_{model}'
 device=args.device
+error_term = args.error_term
+data_path = f'../data/dataset/itrf_evaluation_rerank_{model}_{error_term}'
 
 if model == "base":
     base_model = "BAAI/bge-reranker-large"
-elif model == "itrf":
-    base_model = "../models/itrf_reranker-large/final_model"
-elif model == "llmware":
-    base_model = "../models/itrf_reranker-large-llmware/final_model"
+else:
+    base_model = f"../models/itrf_reranker-large-{model}_{error_term}/final_model"
 #######
 
 sentinel = object() # Used to check if the iterators are empty
