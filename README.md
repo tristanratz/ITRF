@@ -2,6 +2,8 @@
 
 This is the code for the Thesis "ITRF: Instruction Tuned Retriever Finetuning".
 
+The model weights are available on [HuggingFace](https://huggingface.co/collections/tristanratz/itrf-66058ddd25a3bd84789eb31a)
+
 ## Using the model
 
 To load the model simply use the model/ folder where the LLM and the reranker can be loaded.
