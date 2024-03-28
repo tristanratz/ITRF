@@ -1,16 +1,19 @@
+# ITRF: Instruction Tuned Retriever Finetuning.
 
-This is the Repo for the work ITRF: Instruction Tuned Retriever Finetuning.
+This is the code for the Thesis "ITRF: Instruction Tuned Retriever Finetuning".
 
-# Using the model
+The model weights are available on [HuggingFace](https://huggingface.co/collections/tristanratz/itrf-66058ddd25a3bd84789eb31a)
+
+## Using the model
 
 To load the model simply use the model/ folder where the LLM and the reranker can be loaded.
 Models will be automatically downloaded from huggingface.
 
-# Running the inference
+## Running the inference
 
 To just run the inference and interact with the pipeline, please use the main.py script.
 
-# Retriever corpus
+## Retriever corpus
 
 To recreate the corpos for this work 
 
@@ -23,7 +26,7 @@ The shell script will start four workers which each load transform split the dat
 
 For the loading of the complete ATLAS wikipedia dump consisting of about 33mio samples it took ~9,5h using 4x Nvidia RTX 3090.
 
-# Recreating the dataset
+## Recreating the dataset
 
 For recreating the dataset you can run the script in create_dataset/.
 Please note that for the notebook to work, the retriver corpus container must be already working.
@@ -39,7 +42,7 @@ dataset = load_dataset("tristanratz/itrf", "llm")
 
 Before running the dataset creation for the reranker make sure that you trained the LLM beforehand.
 
-# Training the LLM model
+## Training the LLM model
 
 For training the models please use the python scripts in train_llm/.
 Please make sure to have the dataset at hand. 
@@ -52,10 +55,10 @@ We optimized and ran our training using deepspeed zero and multiple optimization
 
 To run the training for the 13b-qlora variant of our model use "train_llm/run_training.sh".
 
-# Train the Reranker
+## Train the Reranker
 
 Content to follow
 
-# Evaluation
+## Evaluation
 
-Use the script to be found in evaluation to evluate the different parts in 
+In the evaluation folder the different steps consisting of retrieval, reranking, generation and final ragas evaluation can be found as well as the results of our runs.
