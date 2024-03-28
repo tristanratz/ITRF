@@ -9,7 +9,7 @@ from ragas.metrics import (
     answer_similarity,
 )
 from ragas import evaluate
-from pandas import read_parquet, DataFrame
+from pandas import read_json, read_parquet, DataFrame
 import pandas as pd
 from datasets import Dataset
 from argparse import ArgumentParser
@@ -37,7 +37,7 @@ n = args.n
 # Load the dataset
 input_path = f"../data/dataset/itrf_evaluation_generation_{reranker}_{llm}_mse"
 itrf = read_parquet(f"{input_path}.parquet")
-data_path =  f"../data/evaluation_results/itrf_evaluation_{reranker}_{llm}"
+data_path =  f"./evaluation_results/itrf_evaluation_{reranker}_{llm}"
 datasets = itrf["src"].unique()
 
 def rank_context(sample, get_answer=False):
@@ -62,12 +62,12 @@ result = None
 result_score = []
 
 if args.resume:
-    result = read_parquet(f"{data_path}_evaluated.parquet")
-    result_score = json.load(open(f"{data_path}_evaluated.json"))
+    result = read_json(f"{data_path}_evaluated.json")
+    result_score = json.load(open(f"{data_path}_evaluated_scores.json"))
 
 for d in datasets:
 
-    if args.resume and d in result["dataset"].unique():
+    if args.resume and d in result["src"].unique():
         continue
 
     print(f"Processing dataset: {d}")
@@ -88,6 +88,7 @@ for d in datasets:
     results["dataset"] = d
     result_score.append(results)
 
-    json.dump(result_score, open(f"{data_path}_evaluated.json", "w"))
+    json.dump(result_score, open(f"{data_path}_evaluated_scores.json", "w"))
 
-    result.to_parquet(f"{data_path}_evaluated.parquet")
+    result.reset_index(inplace=True, drop=True)
+    result.to_json(f"{data_path}_evaluated.json")
