@@ -5,7 +5,7 @@ from ragas.metrics import (
     answer_relevancy,
     faithfulness,
     context_recall,
-    context_precision,
+    context_relevancy,
     answer_similarity,
 )
 from ragas import evaluate
@@ -78,7 +78,7 @@ for d in datasets:
         answer_relevancy, 
         answer_similarity, 
         context_recall, 
-        context_precision
+        context_relevancy
     ])
     if result is None:
         result = results.to_pandas()
